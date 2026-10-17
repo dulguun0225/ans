@@ -22,12 +22,57 @@
 //!   `while` can become `if`. Check this with your L: after `x /= 26`, is one
 //!   word always enough to bring x back to at least L?
 
+// The three conditions:
+// - [L, 2^32 * L) fits in a u64: 2^32 * L <= 2^64, so L <= 2^32.
+// - L is a multiple of 26: L = 26 * 2^k.
+// - x * 26 + 25 does not overflow: encode multiplies only x < (L / 26) * 2^32, so
+//   x * 26 + 25 < L * 2^32 <= 2^64 by the first condition.
+// 26 * 2^27 < 2^32 < 26 * 2^28, so k = 27.
+pub const L: u64 = super::K << 27;
+pub const H: u64 = L << 32;
+
 pub fn encode(text: &str) -> Vec<u32> {
-    todo!()
+    let mut state = L;
+    let mut words = vec![];
+
+    // Encode the last letter first, so decode yields the text in order (step 5).
+    for c in text.chars().rev() {
+        // Step 4's threshold with 2^32 in place of 256. state < H = 26 * 2^59, so
+        // one shift brings it below L, which is below the threshold 2^59: one word
+        // per letter at most.
+        if (L / super::K) << 32 <= state {
+            words.push(state as u32);
+            state >>= 32;
+        }
+
+        state = state * super::K + super::index(c);
+    }
+
+    // The final state first, as 2 words, low word first; then the words last
+    // written first.
+    let mut out = vec![state as u32, (state >> 32) as u32];
+    out.extend(words.iter().rev());
+    out
 }
 
 pub fn decode(encoded: &[u32]) -> String {
-    todo!()
+    let mut state = encoded[0] as u64 | (encoded[1] as u64) << 32;
+    let mut i = 2;
+    let mut text = String::new();
+
+    // Step 5's stop rule: no words remain and state == L.
+    while i < encoded.len() || state != L {
+        text.push(super::letter(state % super::K));
+        state /= super::K;
+
+        // state >= L / 26 = 2^27 here, so one word makes it at least 2^59 >= L.
+        if state < L {
+            state = (state << 32) | encoded[i] as u64;
+            i += 1;
+        }
+    }
+
+    text
 }
 
 #[cfg(test)]
