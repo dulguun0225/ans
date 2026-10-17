@@ -20,12 +20,73 @@
 //! - Checking `x == L` alone is not enough: the state can return to L after
 //!   reading a byte back, while bytes remain.
 
+
+pub const L: u64 = super::K << 32;
+pub const H: u64 = L * 256;
+
+
 pub fn encode(text: &str) -> Vec<u8> {
-    todo!()
+    let mut state = L;
+    let mut bytes = vec![];
+
+    for c in text.chars() {
+
+        // `state = state * K + index(c)` must keep state below H for every letter,
+        // so for the largest index, K - 1:
+        //   state * K + (K - 1) < H
+        //   state * K + K <= H          (whole numbers: a < b is the same as a + 1 <= b)
+        //   (state + 1) * K <= H
+        //   state + 1 <= (L / K) * 256  (H / K, exact because L is a multiple of K)
+        //   state < (L / K) * 256
+        // The loop runs while this is false. Each shift divides state by 256, so the
+        // loop stops at or above L / K, and state * K stays at least L.
+        while (L / super::K) * 256 <= state {
+            bytes.push(state as u8);
+            state >>= 8;
+        }
+
+        // state was in [L, H) before the loop. If the loop wrote a byte, state is now
+        // below L: state < H, so state >> 8 < H / 256 = L. If it wrote nothing, state
+        // is unchanged and still at least L. decode reads this difference.
+
+        // Returns state to [L, H).
+        state = state * super::K + super::index(c);
+    }
+
+    bytes.extend(state.to_le_bytes());
+    bytes
 }
 
 pub fn decode(encoded: &[u8]) -> String {
-    todo!()
+    let mut chars: Vec<char> = vec![];
+    // The last 8 bytes hold the final state. `from_le_bytes` takes a `[u8; 8]`, and
+    // `try_into` converts the 8-byte slice into one.
+    let mut state = u64::from_le_bytes(encoded[encoded.len() - 8..].try_into().unwrap());
+    let bytes = &encoded[0..encoded.len() - 8];
+    // Position just past the next byte to read; bytes are read back last written first.
+    let mut i = bytes.len();
+
+
+    // Stop when no bytes remain and state == L. Until encode writes its first byte,
+    // every letter makes state larger, so this pair occurs only at the start of
+    // encode. state == L alone is not enough: it can equal L partway through.
+    while i > 0 || state != L {
+        // Undoes `state = state * K + index(c)`. state is now what encode had after
+        // its shift loop for this letter: below L if that loop wrote bytes, at least
+        // L if it wrote nothing.
+        chars.push(super::letter(state % super::K));
+        state /= super::K;
+
+        // Undoes the shifts, last written byte first. Each read multiplies state by
+        // 256, so it reaches [L, H) after exactly as many bytes as encode wrote.
+        while state < L {
+            i -= 1;
+            state = (state << 8) | bytes[i] as u64;
+        }
+    }
+
+    chars.reverse();
+    chars.into_iter().collect()
 }
 
 #[cfg(test)]
