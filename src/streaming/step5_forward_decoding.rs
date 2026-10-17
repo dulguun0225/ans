@@ -23,8 +23,18 @@
 //! - The stop rule is step 4's rule with the byte order reversed: "no bytes
 //!   remain" is now `pos == bytes.len()`.
 
+use super::step3_state_interval::L;
+
 pub fn encode(text: &str) -> Vec<u8> {
-    todo!()
+    // The decoder yields the last letter encoded first, so encode the last letter
+    // of the text first.
+    let reversed: String = text.chars().rev().collect();
+    let (state, bytes) = super::step3_state_interval::encode(&reversed);
+
+    // The decoder needs the final state first, then the bytes last written first.
+    let mut out = state.to_le_bytes().to_vec();
+    out.extend(bytes.iter().rev());
+    out
 }
 
 pub struct Decoder<'a> {
@@ -35,7 +45,9 @@ pub struct Decoder<'a> {
 
 impl<'a> Decoder<'a> {
     pub fn new(bytes: &'a [u8]) -> Self {
-        todo!()
+        // The first 8 bytes hold the final state; the written bytes follow.
+        let x = u64::from_le_bytes(bytes[..8].try_into().unwrap());
+        Decoder { bytes, pos: 8, x }
     }
 }
 
@@ -43,7 +55,24 @@ impl Iterator for Decoder<'_> {
     type Item = char;
 
     fn next(&mut self) -> Option<char> {
-        todo!()
+        // Step 4's stop rule, with the end of the bytes now at bytes.len().
+        if self.pos == self.bytes.len() && self.x == L {
+            return None;
+        }
+
+        // Undoes `x = x * K + index(c)` for the next letter of the text.
+        let c = super::letter(self.x % super::K);
+        self.x /= super::K;
+
+        // Undoes the shifts. The bytes are stored last written first, so they are
+        // read forward. With L = 26 << 32 this reads at most one byte, so m letters
+        // need only the first 8 + m bytes.
+        while self.x < L {
+            self.x = (self.x << 8) | self.bytes[self.pos] as u64;
+            self.pos += 1;
+        }
+
+        Some(c)
     }
 }
 
