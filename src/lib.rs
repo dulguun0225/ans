@@ -212,7 +212,7 @@ mod tests {
         let coder = Coder::new(alphabets.clone());
         let encoded = coder.encode("cab");
 
-        let decoded = coder.decode(encoded);
+        let _ = coder.decode(encoded);
         // dbg!(decoded);
     }
 
