@@ -15,7 +15,7 @@
 //!                      while x < L { x = (x << 8) | last written byte }
 //! ```
 //!
-//! Find `THRESHOLD`. `decode` gets the number of letters `n`.
+//! Find `THRESHOLD`. `decode` stops when no bytes remain and `x == L`.
 //!
 //! Implement `encode` and `decode`. Run `cargo test streaming::step3`.
 //!
@@ -61,14 +61,15 @@ pub fn encode(text: &str) -> (u64, Vec<u8>) {
     (state, bytes)
 }
 
-pub fn decode(mut state: u64, bytes: &[u8], n: usize) -> String {
+pub fn decode(mut state: u64, bytes: &[u8]) -> String {
     let mut chars: Vec<char> = vec![];
     // Position just past the next byte to read; bytes are read back last written first.
     let mut i = bytes.len();
 
-    // Loop n times: state alone cannot mark the end. It returns to L after the last
-    // letter, but it can also equal L partway through.
-    for _ in 0..n {
+    // Stop when no bytes remain and state == L. Until encode writes its first byte,
+    // every letter makes state larger, so this pair occurs only at the start of
+    // encode. state == L alone is not enough: it can equal L partway through.
+    while i > 0 || state != L {
         // Undoes `state = state * K + index(c)`. state is now what encode had after
         // its shift loop for this letter: below L if that loop wrote bytes, at least
         // L if it wrote nothing.
@@ -97,7 +98,7 @@ mod tests {
         let (state, bytes) = encode("");
         assert_eq!(state, L);
         assert!(bytes.is_empty());
-        assert_eq!(decode(state, &bytes, 0), "");
+        assert_eq!(decode(state, &bytes), "");
     }
 
     #[test]
@@ -111,7 +112,7 @@ mod tests {
             // No extra space: the bytes are at most what n letters need.
             let bound = size_bound(n, 8.0);
             assert!(bytes.len() <= bound, "{} bytes, bound {bound}", bytes.len());
-            assert_eq!(decode(state, &bytes, n), s);
+            assert_eq!(decode(state, &bytes), s);
         }
     }
 }
